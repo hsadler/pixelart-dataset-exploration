@@ -15,27 +15,19 @@ def _load_and_preprocess_dataset(
     path:str,
     split:str,
     image_pixel_size:int,
-    subset:int = None,
 ) -> DataLoader:
-    if subset:
-        ds = load_dataset(path, split=split).select(range(subset))
-    else:
-        ds = load_dataset(path, split=split)
-    
+    ds = load_dataset(path, split=split)
     transform = v2.Compose([
         v2.Lambda(lambda x: x.convert("RGB")),
         v2.Lambda(lambda x: _scale_image_by_pixel_size(x, image_pixel_size)),
         v2.CenterCrop((image_pixel_size, image_pixel_size)),
         v2.ToTensor(),
     ])
-
     def preprocess(examples):
         tensors = [transform(image) for image in examples["image"]]
         return {"tensor": torch.stack(tensors)}
-
     ds = ds.map(preprocess, batched=True)
     ds.set_format(type="torch", columns=["tensor"])
-
     return ds
 
 
@@ -83,7 +75,6 @@ def create_test_image(image_pixel_size: int = 64):
         path="tkarr/sprite_caption_dataset",
         split="train",
         image_pixel_size=image_pixel_size,
-        sample_size=1,
     )
     # get first image and save it
     t: torch.Tensor = ds[0]["tensor"]
@@ -91,7 +82,12 @@ def create_test_image(image_pixel_size: int = 64):
     pil_image.save("test_image.png")
 
 
-def train(batch_size: int = 16, image_pixel_size: int = 64, subset: int = None, num_epochs: int = 10):
+def train(
+    batch_size: int = 16,
+    image_pixel_size: int = 64,
+    num_epochs: int = 10,
+    overfit: bool = False,
+):
     config_dict = {k: v for k, v in locals().items()}
     print("Config:")
     for k, v in config_dict.items():
@@ -99,20 +95,19 @@ def train(batch_size: int = 16, image_pixel_size: int = 64, subset: int = None, 
     
     # Load and preprocess the datasets
     print("Loading and preprocessing datasets...")
-    train_ds = _load_and_preprocess_dataset(
+    train_ds: torch.utils.data.Dataset = _load_and_preprocess_dataset(
         path="tkarr/sprite_caption_dataset",
         split="train",
         image_pixel_size=image_pixel_size,
-        subset=subset,
     )
-    # val_ds = _load_and_preprocess_dataset(
-    #     path="tkarr/sprite_caption_dataset",
-    #     split="valid",
-    #     image_pixel_size=image_pixel_size,
-    #     subset=subset,
-    # )
-    # TODO: for overfitting, remove this
-    val_ds = train_ds
+    val_ds: torch.utils.data.Dataset = _load_and_preprocess_dataset(
+        path="tkarr/sprite_caption_dataset",
+        split="valid",
+        image_pixel_size=image_pixel_size,
+    )
+    if overfit:
+        train_ds = train_ds.select(range(10))
+        val_ds = train_ds
     
     print("Creating data loaders...")
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
