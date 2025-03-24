@@ -15,10 +15,10 @@ def _load_and_preprocess_dataset(
     path:str,
     split:str,
     image_pixel_size:int,
-    sample_size:int = None,
+    subset:int = None,
 ) -> DataLoader:
-    if sample_size:
-        ds = load_dataset(path, split=split).select(range(sample_size))
+    if subset:
+        ds = load_dataset(path, split=split).select(range(subset))
     else:
         ds = load_dataset(path, split=split)
     
@@ -63,7 +63,7 @@ def _instantiate_model(image_pixel_size: int = 64) -> torch.nn.Sequential:
         torch.nn.ReLU(),
         torch.nn.Linear(512, 256),
         torch.nn.ReLU(),
-        torch.nn.Linear(256, 128),
+        torch.nn.Linear(256, 128),  # This creates the latent representation
         torch.nn.ReLU(),
         # Decoder
         torch.nn.Linear(128, 256),
@@ -91,7 +91,7 @@ def create_test_image(image_pixel_size: int = 64):
     pil_image.save("test_image.png")
 
 
-def train(batch_size: int = 16, image_pixel_size: int = 64, sample_size: int = None):
+def train(batch_size: int = 16, image_pixel_size: int = 64, subset: int = None, num_epochs: int = 10):
     config_dict = {k: v for k, v in locals().items()}
     print("Config:")
     for k, v in config_dict.items():
@@ -103,14 +103,16 @@ def train(batch_size: int = 16, image_pixel_size: int = 64, sample_size: int = N
         path="tkarr/sprite_caption_dataset",
         split="train",
         image_pixel_size=image_pixel_size,
-        sample_size=sample_size,
+        subset=subset,
     )
-    val_ds = _load_and_preprocess_dataset(
-        path="tkarr/sprite_caption_dataset",
-        split="valid",
-        image_pixel_size=image_pixel_size,
-        sample_size=sample_size,
-    )
+    # val_ds = _load_and_preprocess_dataset(
+    #     path="tkarr/sprite_caption_dataset",
+    #     split="valid",
+    #     image_pixel_size=image_pixel_size,
+    #     subset=subset,
+    # )
+    # TODO: for overfitting, remove this
+    val_ds = train_ds
     
     print("Creating data loaders...")
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
@@ -125,7 +127,6 @@ def train(batch_size: int = 16, image_pixel_size: int = 64, sample_size: int = N
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
     print("Training the model...")
-    num_epochs = 10
     best_val_loss = float('inf')
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs}")

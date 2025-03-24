@@ -5,8 +5,8 @@ create-test-image:
 train:
 	poetry run python -m cli train
 
-train-sample-size-100:
-	poetry run python -m cli train --sample_size=100
+train-overfit:
+	poetry run python -m cli train --batch-size=5 --subset=10 --num-epochs=300
 
 predict:
 	poetry run python -m cli predict
