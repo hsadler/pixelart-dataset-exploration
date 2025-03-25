@@ -1,11 +1,10 @@
 from fire import Fire
 from datasets import load_dataset
-from torch.utils.data import DataLoader
-from torchvision.transforms import v2
-from PIL import Image
 import torch
+from torch.utils.data import DataLoader
+from torchvision.transforms import v2, ToPILImage
+from PIL import Image
 from tqdm import tqdm
-from torchvision.transforms import ToPILImage
 
 
 # HELPER FUNCTIONS
@@ -162,37 +161,55 @@ def train(
 
 
 def predict(
-    model_path: str = "best_model.pth",
-    image_pixel_size: int = 64,
-    image_path: str = "test_image.png",
-    output_path: str = "output_image.png",
-):
-    DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_path: str,
+    input_tensor: torch.Tensor,
+    image_pixel_size: int,
+) -> torch.Tensor:
+    # Load model
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model: torch.nn.Sequential = _instantiate_model(image_pixel_size=image_pixel_size)
-    model.load_state_dict(torch.load(model_path))
+    model = model.to(device)  # Move model to device
+    model.load_state_dict(torch.load(model_path, map_location=device))  # Load state dict with correct device mapping
     model.eval()
-
-    # Load an image
-    image: Image.Image = Image.open(image_path)
-    image: Image.Image = _scale_image_by_pixel_size(image, image_pixel_size)
-    image: torch.Tensor = v2.ToTensor()(image)
-    image: torch.Tensor = image.unsqueeze(0)
-    image: torch.Tensor = image.to(DEVICE)
-
     # Predict
+    input_tensor: torch.Tensor = input_tensor.unsqueeze(0).to(device)
     with torch.no_grad():
-        outputs: torch.Tensor = model(image)
+        outputs: torch.Tensor = model(input_tensor)
         outputs: torch.Tensor = outputs.view(outputs.size(0), 3, image_pixel_size, image_pixel_size)
         outputs: torch.Tensor = outputs.clamp(0, 1)  # Ensure values are between 0 and 1
         outputs: torch.Tensor = outputs.cpu()
         outputs: torch.Tensor = outputs.squeeze(0)  # Remove batch dimension
-        outputs: Image.Image = ToPILImage()(outputs)
-        outputs.save(output_path)
+    return outputs
+
+
+def predict_from_image(
+    model_path: str = "best_model.pth",
+    image_path: str = "test_image.png",
+    output_path: str = "output_image.png",
+    image_pixel_size: int = 64,
+) -> None:
+    image: Image.Image = Image.open(image_path)
+    image: Image.Image = _scale_image_by_pixel_size(image, image_pixel_size)
+    input_tensor: torch.Tensor = v2.ToTensor()(image)
+    output_tensor: torch.Tensor = predict(model_path, input_tensor, image_pixel_size)
+    output_image: Image.Image = ToPILImage()(output_tensor)
+    output_image.save(output_path)
+
+
+def predict_from_dataset_index(
+    model_path: str = "best_model.pth",
+    ds: torch.utils.data.Dataset = None,
+    ds_index: int = 0,
+    image_pixel_size: int = 64,
+) -> torch.Tensor:
+    input_tensor: torch.Tensor = ds[ds_index]["tensor"]
+    output_tensor: torch.Tensor = predict(model_path, input_tensor, image_pixel_size)
+    return output_tensor
 
 
 if __name__ == "__main__":
     Fire({
         "create_test_image": create_test_image,
         "train": train,
-        "predict": predict,
+        "predict_from_image": predict_from_image,
     })
