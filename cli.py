@@ -8,6 +8,9 @@ from tqdm import tqdm
 import wandb
 from wandb.sdk.wandb_run import Run
 
+from vae import ModelType, new_model, predict
+
+
 # HELPER FUNCTIONS
 
 
@@ -19,6 +22,8 @@ def _load_and_preprocess_dataset(
     ds = load_dataset(path, split=split)
     transform = v2.Compose([
         v2.Lambda(lambda x: x.convert("RGB")),
+        # TODO maybe convert to HSL?
+        # v2.Lambda(lambda x: x.convert("HSL")),
         v2.Lambda(lambda x: _scale_image_by_pixel_size(x, image_pixel_size)),
         v2.CenterCrop((image_pixel_size, image_pixel_size)),
         v2.ToTensor(),
@@ -47,30 +52,10 @@ def _scale_image_by_pixel_size(image: Image.Image, pixel_size: int) -> Image.Ima
     return scaled_image
 
 
-def _instantiate_model(image_pixel_size: int = 64) -> torch.nn.Sequential:
-    model: torch.nn.Sequential = torch.nn.Sequential(
-        # Encoder
-        torch.nn.Flatten(),
-        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 512),
-        torch.nn.ReLU(),
-        torch.nn.Linear(512, 256),
-        torch.nn.ReLU(),
-        torch.nn.Linear(256, 128),  # This creates the latent representation
-        torch.nn.ReLU(),
-        # Decoder
-        torch.nn.Linear(128, 256),
-        torch.nn.ReLU(),
-        torch.nn.Linear(256, 512),
-        torch.nn.ReLU(),
-        torch.nn.Linear(512, 3 * image_pixel_size * image_pixel_size),
-    )
-    return model
-
-
 # CLI COMMANDS
 
 
-def create_test_image(image_pixel_size: int = 64):
+def create_test_image(image_pixel_size: int):
     ds = _load_and_preprocess_dataset(
         path="tkarr/sprite_caption_dataset",
         split="train",
@@ -83,10 +68,11 @@ def create_test_image(image_pixel_size: int = 64):
 
 
 def train(
-    batch_size: int = 16,
-    image_pixel_size: int = 64,
-    num_epochs: int = 10,
-    device: str = 'cpu',
+    model_type: str,
+    image_pixel_size: int,
+    batch_size: int,
+    num_epochs: int,
+    device: str,
     overfit: bool = False,
     wandb_project: str = "pixelart-autoencoder",
 ):
@@ -121,7 +107,7 @@ def train(
 
     # Train a simple autoencoder
     print("Instantiating model...")
-    model = _instantiate_model(image_pixel_size=image_pixel_size)
+    model = new_model(model_type=ModelType(model_type), image_pixel_size=image_pixel_size)
     model = model.to(device)  # Move model to device
     
     print("Defining loss function and optimizer...")
@@ -187,56 +173,31 @@ def train(
     run.finish()
 
 
-def predict(
-    model_path: str,
-    input_tensor: torch.Tensor,
-    image_pixel_size: int,
-) -> torch.Tensor:
-    # Load model
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model: torch.nn.Sequential = _instantiate_model(image_pixel_size=image_pixel_size)
-    model = model.to(device)  # Move model to device
-    model.load_state_dict(torch.load(model_path, map_location=device))  # Load state dict with correct device mapping
-    model.eval()
-    # Predict
-    input_tensor: torch.Tensor = input_tensor.unsqueeze(0).to(device)
-    with torch.no_grad():
-        outputs: torch.Tensor = model(input_tensor)
-        outputs: torch.Tensor = outputs.view(outputs.size(0), 3, image_pixel_size, image_pixel_size)
-        outputs: torch.Tensor = outputs.clamp(0, 1)  # Ensure values are between 0 and 1
-        outputs: torch.Tensor = outputs.cpu()
-        outputs: torch.Tensor = outputs.squeeze(0)  # Remove batch dimension
-    return outputs
-
-
 def predict_from_image(
+    model_type: str,
     model_path: str = "best_model.pth",
     image_path: str = "test_image.png",
     output_path: str = "output_image.png",
     image_pixel_size: int = 64,
+    device: str = "cpu",
 ) -> None:
     image: Image.Image = Image.open(image_path)
     image: Image.Image = _scale_image_by_pixel_size(image, image_pixel_size)
     input_tensor: torch.Tensor = v2.ToTensor()(image)
-    output_tensor: torch.Tensor = predict(model_path, input_tensor, image_pixel_size)
+    output_tensor: torch.Tensor = predict(
+        model_type=ModelType(model_type),
+        model_path=model_path,
+        input_tensor=input_tensor,
+        image_pixel_size=image_pixel_size,
+        device=device,
+    )
     output_image: Image.Image = ToPILImage()(output_tensor)
     output_image.save(output_path)
 
 
-def predict_from_dataset_index(
-    model_path: str = "best_model.pth",
-    ds: torch.utils.data.Dataset = None,
-    ds_index: int = 0,
-    image_pixel_size: int = 64,
-) -> torch.Tensor:
-    input_tensor: torch.Tensor = ds[ds_index]["tensor"]
-    output_tensor: torch.Tensor = predict(model_path, input_tensor, image_pixel_size)
-    return output_tensor
-
-
 if __name__ == "__main__":
     Fire({
-        "create_test_image": create_test_image,
         "train": train,
+        "create_test_image": create_test_image,
         "predict_from_image": predict_from_image,
     })

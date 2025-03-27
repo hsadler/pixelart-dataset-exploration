@@ -1,45 +1,43 @@
+# Constants
+MODEL_TYPE_HIGH_CAPACITY = high_capacity
+MODEL_TYPE_LOW_CAPACITY = low_capacity
+IMAGE_SIZE_SMALL = 32
+IMAGE_SIZE_MEDIUM = 64
+BATCH_SIZE_OVERFIT = 5
+BATCH_SIZE_TRAIN = 50
+EPOCHS_SMALL = 50
+EPOCHS_MEDIUM = 150
+EPOCHS_LARGE = 300
+DEVICE = mps
 
-# Overfit tests
+# Medium image overfit test
 
-create-test-image-overfit:
-	poetry run python -m cli create_test_image --image-pixel-size=64
+train-medium-image-overfit:
+	poetry run python -m cli train \
+		--model-type=$(MODEL_TYPE_HIGH_CAPACITY) \
+		--overfit=True \
+		--batch-size=$(BATCH_SIZE_OVERFIT) \
+		--num-epochs=$(EPOCHS_SMALL) \
+		--image-pixel-size=$(IMAGE_SIZE_MEDIUM) \
+		--device=$(DEVICE)
 
-train-overfit:
-	poetry run python -m cli train --overfit=True --batch-size=5 --num-epochs=150 --image-pixel-size=64
-
-predict-overfit:
-	poetry run python -m cli predict_from_image --image-pixel-size=64
-
-run-overfit: create-test-image-overfit train-overfit predict-overfit
-
-# Small image overfit tests
-
-create-test-image-small-overfit:
-	poetry run python -m cli create_test_image --image-pixel-size=32
+# Small image overfit test
 
 train-small-image-overfit:
-	poetry run python -m cli train --overfit=True --batch-size=5 --num-epochs=50 --image-pixel-size=32
-
-predict-small-image-overfit:
-	poetry run python -m cli predict_from_image --image-pixel-size=32
-
-run-small-image-overfit: create-test-image-small-overfit train-small-image-overfit predict-small-image-overfit
-
-
-# Large image overfit tests
-
-train-large-image-overfit:
-	poetry run python -m cli train --overfit=True --batch-size=5 --num-epochs=50 --image-pixel-size=128
+	poetry run python -m cli train \
+		--model-type=$(MODEL_TYPE_HIGH_CAPACITY) \
+		--overfit=True \
+		--batch-size=$(BATCH_SIZE_OVERFIT) \
+		--num-epochs=$(EPOCHS_SMALL) \
+		--image-pixel-size=$(IMAGE_SIZE_SMALL) \
+		--device=$(DEVICE)
 
 # Real training
 
-create-test-image:
-	poetry run python -m cli create_test_image --image-pixel-size=32
-
 train:
-	poetry run python -m cli train --batch-size=50 --num-epochs=10 --image-pixel-size=32 --device=mps
-
-predict:
-	poetry run python -m cli predict_from_image --image-pixel-size=32
-
-run-real-training: create-test-image train predict
+	poetry run python -m cli train \
+		--model-type=$(MODEL_TYPE_HIGH_CAPACITY) \
+		--batch-size=$(BATCH_SIZE_TRAIN) \
+		--num-epochs=$(EPOCHS_SMALL) \
+		--image-pixel-size=$(IMAGE_SIZE_SMALL) \
+		--device=$(DEVICE)
