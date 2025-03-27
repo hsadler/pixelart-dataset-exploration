@@ -5,7 +5,8 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import v2, ToPILImage
 from PIL import Image
 from tqdm import tqdm
-
+import wandb
+from wandb.sdk.wandb_run import Run
 
 # HELPER FUNCTIONS
 
@@ -85,12 +86,18 @@ def train(
     batch_size: int = 16,
     image_pixel_size: int = 64,
     num_epochs: int = 10,
+    device: str = 'cpu',
     overfit: bool = False,
+    wandb_project: str = "pixelart-autoencoder",
 ):
     config_dict = {k: v for k, v in locals().items()}
-    print("Config:")
-    for k, v in config_dict.items():
-        print(f"  {k}: {v}")
+
+    # Initialize wandb
+    print("Initializing wandb...")
+    run: Run = wandb.init(
+        project=wandb_project,
+        config=config_dict,
+    )
     
     # Load and preprocess the datasets
     print("Loading and preprocessing datasets...")
@@ -115,6 +122,7 @@ def train(
     # Train a simple autoencoder
     print("Instantiating model...")
     model = _instantiate_model(image_pixel_size=image_pixel_size)
+    model = model.to(device)  # Move model to device
     
     print("Defining loss function and optimizer...")
     criterion = torch.nn.MSELoss()
@@ -129,8 +137,8 @@ def train(
         
         for batch in tqdm(train_loader, desc=f"Training epoch {epoch+1}"):
             optimizer.zero_grad()
-            inputs = batch["tensor"]
-            inputs_flat = inputs.view(inputs.size(0), -1)  # Flatten to (batch_size, channels*height*width)
+            inputs = batch["tensor"].to(device)  # Move inputs to device
+            inputs_flat = inputs.view(inputs.size(0), -1)
             outputs = model(inputs_flat)
             loss = criterion(outputs, inputs_flat)
             loss.backward()
@@ -143,13 +151,20 @@ def train(
         val_loss = 0.0
         with torch.no_grad():
             for batch in val_loader:
-                inputs = batch["tensor"]
-                inputs_flat = inputs.view(inputs.size(0), -1)  # Flatten to (batch_size, channels*height*width)
+                inputs = batch["tensor"].to(device)  # Move inputs to device
+                inputs_flat = inputs.view(inputs.size(0), -1)
                 outputs = model(inputs_flat)
                 loss = criterion(outputs, inputs_flat)
                 val_loss += loss.item() * inputs.size(0)
         
         val_loss /= len(val_loader)
+        
+        # Log metrics to wandb
+        run.log({
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+        })
         
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
         
@@ -157,7 +172,19 @@ def train(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), "best_model.pth")
+            # Log best model to wandb
             print(f"Model saved at epoch {epoch+1} with validation loss: {val_loss:.4f}")
+
+    # Log details
+    print("Training complete!")
+    print(f"  Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+    print(f"  Best Val Loss: {best_val_loss:.4f}")
+    print("Config:")
+    for k, v in config_dict.items():
+        print(f"  {k}: {v}")
+
+    # Close wandb run
+    run.finish()
 
 
 def predict(

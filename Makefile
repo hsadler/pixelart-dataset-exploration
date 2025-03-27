@@ -37,7 +37,7 @@ create-test-image:
 	poetry run python -m cli create_test_image --image-pixel-size=32
 
 train:
-	poetry run python -m cli train --batch-size=50 --num-epochs=10 --image-pixel-size=32
+	poetry run python -m cli train --batch-size=50 --num-epochs=10 --image-pixel-size=32 --device=mps
 
 predict:
 	poetry run python -m cli predict_from_image --image-pixel-size=32

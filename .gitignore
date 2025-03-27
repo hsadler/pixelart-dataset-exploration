@@ -176,6 +176,9 @@ cython_debug/
 # Models
 best_model.pth
 
+# Wandb
+wandb/
+
 # Test images
 test_image.png
 output_image.png

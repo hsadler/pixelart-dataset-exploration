@@ -19,6 +19,7 @@ scikit-image = "^0.25.2"
 fire = "^0.7.0"
 torch = "^2.6.0"
 torchvision = "^0.21.0"
+wandb = "^0.19.8"
 
 [build-system]
 requires = ["poetry-core"]
