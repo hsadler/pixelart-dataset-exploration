@@ -5,9 +5,28 @@ import torch
 class ModelType(Enum):
     HIGH_CAPACITY = "high_capacity"
     LOW_CAPACITY = "low_capacity"
+    VERY_HIGH_CAPACITY = "very_high_capacity"
+    BATCH_NORM = "batch_norm"
+    LEAKY_RELU = "leaky_relu"
 
 
 def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequential:
+    low_capacity_model: torch.nn.Sequential = torch.nn.Sequential(
+        # Encoder
+        torch.nn.Flatten(),
+        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 512),
+        torch.nn.ReLU(),
+        torch.nn.Linear(512, 256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 128),  # This creates the latent representation
+        torch.nn.ReLU(),
+        # Decoder
+        torch.nn.Linear(128, 256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 512),
+        torch.nn.ReLU(),
+        torch.nn.Linear(512, 3 * image_pixel_size * image_pixel_size),
+    )
     high_capacity_model: torch.nn.Sequential = torch.nn.Sequential(
         # Encoder
         torch.nn.Flatten(),
@@ -28,25 +47,83 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
         torch.nn.ReLU(),
         torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
     )
-    low_capacity_model: torch.nn.Sequential = torch.nn.Sequential(
+    very_high_capacity_model: torch.nn.Sequential = torch.nn.Sequential(
         # Encoder
         torch.nn.Flatten(),
-        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 512),
+        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 2048),
+        torch.nn.ReLU(),
+        torch.nn.Linear(2048, 1024),
+        torch.nn.ReLU(),
+        torch.nn.Linear(1024, 512),
         torch.nn.ReLU(),
         torch.nn.Linear(512, 256),
         torch.nn.ReLU(),
-        torch.nn.Linear(256, 128),  # This creates the latent representation
+        torch.nn.Linear(256, 128),  # Latent representation
         torch.nn.ReLU(),
-        # Decoder
+        # Decoder (mirror the encoder)
         torch.nn.Linear(128, 256),
         torch.nn.ReLU(),
         torch.nn.Linear(256, 512),
         torch.nn.ReLU(),
-        torch.nn.Linear(512, 3 * image_pixel_size * image_pixel_size),
+        torch.nn.Linear(512, 1024),
+        torch.nn.ReLU(),
+        torch.nn.Linear(1024, 2048),
+        torch.nn.ReLU(),
+        torch.nn.Linear(2048, 3 * image_pixel_size * image_pixel_size),
+    )
+    batch_norm_model: torch.nn.Sequential = torch.nn.Sequential(
+        # Encoder
+        torch.nn.Flatten(),
+        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 1024),
+        torch.nn.BatchNorm1d(1024),
+        torch.nn.ReLU(),
+        torch.nn.Linear(1024, 512),
+        torch.nn.BatchNorm1d(512),
+        torch.nn.ReLU(),
+        torch.nn.Linear(512, 256),
+        torch.nn.BatchNorm1d(256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 128),  # Latent representation
+        torch.nn.BatchNorm1d(128),
+        torch.nn.ReLU(),
+        # Decoder (mirror the encoder)
+        torch.nn.Linear(128, 256),
+        torch.nn.BatchNorm1d(256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 512),
+        torch.nn.BatchNorm1d(512),
+        torch.nn.ReLU(),
+        torch.nn.Linear(512, 1024),
+        torch.nn.BatchNorm1d(1024),
+        torch.nn.ReLU(),
+        torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
+    )
+    leaky_relu_model: torch.nn.Sequential = torch.nn.Sequential(
+        # Encoder
+        torch.nn.Flatten(),
+        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 1024),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(1024, 512),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(512, 256),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(256, 128),  # Latent representation
+        torch.nn.LeakyReLU(0.2),
+        # Decoder (mirror the encoder)
+        torch.nn.Linear(128, 256),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(256, 512),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(512, 1024),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
     )
     return {
         ModelType.HIGH_CAPACITY: high_capacity_model,
         ModelType.LOW_CAPACITY: low_capacity_model,
+        ModelType.VERY_HIGH_CAPACITY: very_high_capacity_model,
+        ModelType.BATCH_NORM: batch_norm_model,
+        ModelType.LEAKY_RELU: leaky_relu_model,
     }[model_type]
 
 

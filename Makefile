@@ -1,6 +1,9 @@
 # Constants
-MODEL_TYPE_HIGH_CAPACITY = high_capacity
 MODEL_TYPE_LOW_CAPACITY = low_capacity
+MODEL_TYPE_HIGH_CAPACITY = high_capacity
+MODEL_TYPE_VERY_HIGH_CAPACITY = very_high_capacity
+MODEL_TYPE_BATCH_NORM = batch_norm
+MODEL_TYPE_LEAKY_RELU = leaky_relu
 IMAGE_SIZE_SMALL = 32
 IMAGE_SIZE_MEDIUM = 64
 BATCH_SIZE_OVERFIT = 5
@@ -36,8 +39,8 @@ train-small-image-overfit:
 
 train:
 	poetry run python -m cli train \
-		--model-type=$(MODEL_TYPE_HIGH_CAPACITY) \
+		--model-type=$(MODEL_TYPE_BATCH_NORM) \
 		--batch-size=$(BATCH_SIZE_TRAIN) \
 		--num-epochs=$(EPOCHS_SMALL) \
-		--image-pixel-size=$(IMAGE_SIZE_SMALL) \
+		--image-pixel-size=$(IMAGE_SIZE_MEDIUM) \
 		--device=$(DEVICE)
