@@ -98,14 +98,18 @@ def train(
         image_pixel_size=image_pixel_size,
     )
     if overfit:
-        train_ds = train_ds.select(range(10))
+        train_ds = train_ds.select(range(100))
         val_ds = train_ds
     
     print("Creating data loaders...")
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    # Train a simple autoencoder
+    # Select 10 fixed images for visualization
+    viz_batch = next(iter(val_loader))
+    viz_inputs = viz_batch["tensor"][:10].to(device)
+    viz_inputs_flat = viz_inputs.view(viz_inputs.size(0), -1)
+
     print("Instantiating model...")
     model = new_model(model_type=ModelType(model_type), image_pixel_size=image_pixel_size)
     model = model.to(device)  # Move model to device
@@ -145,11 +149,34 @@ def train(
         
         val_loss /= len(val_loader)
         
-        # Log metrics to wandb
+        # Log sample input and reconstruction images side by side in a single grid
+        if epoch % 10 == 0:
+            with torch.no_grad():
+                viz_outputs = model(viz_inputs_flat)
+                viz_outputs = viz_outputs.view(-1, 3, image_pixel_size, image_pixel_size)
+                # Create pairs of original and reconstructed images
+                paired_images = []
+                for idx in range(viz_inputs.size(0)):
+                    # Concatenate along width (original and reconstruction side by side)
+                    pair = torch.cat([viz_inputs[idx], viz_outputs[idx]], dim=2)
+                    paired_images.append(pair)
+                # Stack all pairs horizontally into a single image
+                # Take only the first 5 pairs
+                grid_image = torch.cat(paired_images[:5], dim=2)
+                # Create a single wandb image with all pairs
+                viz_images = [
+                    wandb.Image(
+                        grid_image,
+                        caption="Left: Original, Right: Reconstruction (5 samples)"
+                    )
+                ]
+
+        # Log metrics and images to wandb
         run.log({
             "epoch": epoch + 1,
             "train_loss": train_loss,
             "val_loss": val_loss,
+            "comparisons": viz_images,
         })
         
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")

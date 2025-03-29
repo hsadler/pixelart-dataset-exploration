@@ -3,14 +3,28 @@ import torch
 
 
 class ModelType(Enum):
-    HIGH_CAPACITY = "high_capacity"
+    SIMPLE = "simple"
     LOW_CAPACITY = "low_capacity"
+    HIGH_CAPACITY = "high_capacity"
     VERY_HIGH_CAPACITY = "very_high_capacity"
     BATCH_NORM = "batch_norm"
     LEAKY_RELU = "leaky_relu"
 
 
 def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequential:
+    # simple model for testing
+    simple_model: torch.nn.Sequential = torch.nn.Sequential(
+        # Encoder
+        torch.nn.Flatten(),
+        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 64),  # Latent representation
+        torch.nn.ReLU(),
+        # Decoder
+        torch.nn.Linear(64, 256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 3 * image_pixel_size * image_pixel_size),
+    )
     low_capacity_model: torch.nn.Sequential = torch.nn.Sequential(
         # Encoder
         torch.nn.Flatten(),
@@ -119,6 +133,7 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
         torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
     )
     return {
+        ModelType.SIMPLE: simple_model,
         ModelType.HIGH_CAPACITY: high_capacity_model,
         ModelType.LOW_CAPACITY: low_capacity_model,
         ModelType.VERY_HIGH_CAPACITY: very_high_capacity_model,
