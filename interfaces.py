@@ -21,5 +21,3 @@ class Model(ABC):
     @abstractmethod
     def predict(self, input_tensor: torch.Tensor) -> torch.Tensor:
         pass
-
-

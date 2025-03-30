@@ -9,6 +9,8 @@ class ModelType(Enum):
     VERY_HIGH_CAPACITY = "very_high_capacity"
     BATCH_NORM = "batch_norm"
     LEAKY_RELU = "leaky_relu"
+    BATCH_NORM_LEAKY = "batch_norm_leaky"
+    CONV = "conv"  # New model type
 
 
 def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequential:
@@ -132,6 +134,63 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
         torch.nn.LeakyReLU(0.2),
         torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
     )
+    batch_norm_leaky_model: torch.nn.Sequential = torch.nn.Sequential(
+        # Encoder
+        torch.nn.Flatten(),
+        torch.nn.Linear(3 * image_pixel_size * image_pixel_size, 1024),
+        torch.nn.BatchNorm1d(1024),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(1024, 512),
+        torch.nn.BatchNorm1d(512),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(512, 256),
+        torch.nn.BatchNorm1d(256),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(256, 128),  # Latent representation
+        torch.nn.BatchNorm1d(128),
+        torch.nn.LeakyReLU(0.2),
+        # Decoder (mirror the encoder)
+        torch.nn.Linear(128, 256),
+        torch.nn.BatchNorm1d(256),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(256, 512),
+        torch.nn.BatchNorm1d(512),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(512, 1024),
+        torch.nn.BatchNorm1d(1024),
+        torch.nn.LeakyReLU(0.2),
+        torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
+    )
+    conv_model: torch.nn.Sequential = torch.nn.Sequential(
+        # Reshape flattened input back to image dimensions
+        torch.nn.Unflatten(1, (3, image_pixel_size, image_pixel_size)),
+        # Encoder
+        torch.nn.Conv2d(3, 32, kernel_size=3, padding=1),
+        torch.nn.ReLU(),
+        torch.nn.MaxPool2d(2, 2),  # Halve the spatial dimensions
+        torch.nn.Conv2d(32, 64, kernel_size=3, padding=1),
+        torch.nn.ReLU(),
+        torch.nn.MaxPool2d(2, 2),  # Halve the spatial dimensions again
+        torch.nn.Conv2d(64, 128, kernel_size=3, padding=1),
+        torch.nn.ReLU(),
+        # Flatten for latent space
+        torch.nn.Flatten(),
+        torch.nn.Linear(
+            (image_pixel_size // 4) * (image_pixel_size // 4) * 128, 128
+        ),  # Latent representation
+        # Decoder
+        torch.nn.Linear(128, (image_pixel_size // 4) * (image_pixel_size // 4) * 128),
+        torch.nn.ReLU(),
+        # Reshape for convolutions
+        torch.nn.Unflatten(1, (128, image_pixel_size // 4, image_pixel_size // 4)),
+        torch.nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # Precise upsampling
+        torch.nn.ReLU(),
+        torch.nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),  # Precise upsampling
+        torch.nn.ReLU(),
+        torch.nn.Conv2d(32, 3, kernel_size=3, padding=1),  # Final convolution to get right channels
+        # Flatten output to match other models
+        torch.nn.Flatten(),
+    )
     return {
         ModelType.SIMPLE: simple_model,
         ModelType.HIGH_CAPACITY: high_capacity_model,
@@ -139,6 +198,8 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
         ModelType.VERY_HIGH_CAPACITY: very_high_capacity_model,
         ModelType.BATCH_NORM: batch_norm_model,
         ModelType.LEAKY_RELU: leaky_relu_model,
+        ModelType.BATCH_NORM_LEAKY: batch_norm_leaky_model,
+        ModelType.CONV: conv_model,
     }[model_type]
 
 
@@ -152,7 +213,9 @@ def predict(
     # Load model
     model: torch.nn.Sequential = new_model(model_type=model_type, image_pixel_size=image_pixel_size)
     model = model.to(device)  # Move model to device
-    model.load_state_dict(torch.load(model_path, map_location=device))  # Load state dict with correct device mapping
+    model.load_state_dict(
+        torch.load(model_path, map_location=device)
+    )  # Load state dict with correct device mapping
     model.eval()
     # Predict
     input_tensor: torch.Tensor = input_tensor.unsqueeze(0).to(device)

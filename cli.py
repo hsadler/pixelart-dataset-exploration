@@ -15,22 +15,26 @@ from vae import ModelType, new_model, predict
 
 
 def _load_and_preprocess_dataset(
-    path:str,
-    split:str,
-    image_pixel_size:int,
+    path: str,
+    split: str,
+    image_pixel_size: int,
 ) -> DataLoader:
     ds = load_dataset(path, split=split)
-    transform = v2.Compose([
-        v2.Lambda(lambda x: x.convert("RGB")),
-        # TODO maybe convert to HSL?
-        # v2.Lambda(lambda x: x.convert("HSL")),
-        v2.Lambda(lambda x: _scale_image_by_pixel_size(x, image_pixel_size)),
-        v2.CenterCrop((image_pixel_size, image_pixel_size)),
-        v2.ToTensor(),
-    ])
+    transform = v2.Compose(
+        [
+            v2.Lambda(lambda x: x.convert("RGB")),
+            # TODO maybe convert to HSL?
+            # v2.Lambda(lambda x: x.convert("HSL")),
+            v2.Lambda(lambda x: _scale_image_by_pixel_size(x, image_pixel_size)),
+            v2.CenterCrop((image_pixel_size, image_pixel_size)),
+            v2.ToTensor(),
+        ]
+    )
+
     def preprocess(examples):
         tensors = [transform(image) for image in examples["image"]]
         return {"tensor": torch.stack(tensors)}
+
     ds = ds.map(preprocess, batched=True)
     ds.set_format(type="torch", columns=["tensor"])
     return ds
@@ -84,7 +88,7 @@ def train(
         project=wandb_project,
         config=config_dict,
     )
-    
+
     # Load and preprocess the datasets
     print("Loading and preprocessing datasets...")
     train_ds: torch.utils.data.Dataset = _load_and_preprocess_dataset(
@@ -100,7 +104,7 @@ def train(
     if overfit:
         train_ds = train_ds.select(range(100))
         val_ds = train_ds
-    
+
     print("Creating data loaders...")
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
@@ -113,18 +117,18 @@ def train(
     print("Instantiating model...")
     model = new_model(model_type=ModelType(model_type), image_pixel_size=image_pixel_size)
     model = model.to(device)  # Move model to device
-    
+
     print("Defining loss function and optimizer...")
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    
+
     print("Training the model...")
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs}")
         model.train()
         train_loss = 0.0
-        
+
         for batch in tqdm(train_loader, desc=f"Training epoch {epoch+1}"):
             optimizer.zero_grad()
             inputs = batch["tensor"].to(device)  # Move inputs to device
@@ -135,7 +139,7 @@ def train(
             optimizer.step()
             train_loss += loss.item() * inputs.size(0)
         train_loss /= len(train_loader)
-        
+
         # Validation
         model.eval()
         val_loss = 0.0
@@ -146,9 +150,9 @@ def train(
                 outputs = model(inputs_flat)
                 loss = criterion(outputs, inputs_flat)
                 val_loss += loss.item() * inputs.size(0)
-        
+
         val_loss /= len(val_loader)
-        
+
         # Log sample input and reconstruction images side by side in a single grid
         if epoch % 10 == 0:
             with torch.no_grad():
@@ -167,20 +171,24 @@ def train(
                 viz_images = [
                     wandb.Image(
                         grid_image,
-                        caption="Left: Original, Right: Reconstruction (5 samples)"
+                        caption="Left: Original, Right: Reconstruction (5 samples)",
                     )
                 ]
 
         # Log metrics and images to wandb
-        run.log({
-            "epoch": epoch + 1,
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-            "comparisons": viz_images,
-        })
-        
-        print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
-        
+        run.log(
+            {
+                "epoch": epoch + 1,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "comparisons": viz_images,
+            }
+        )
+
+        print(
+            f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+        )
+
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -223,8 +231,10 @@ def predict_from_image(
 
 
 if __name__ == "__main__":
-    Fire({
-        "train": train,
-        "create_test_image": create_test_image,
-        "predict_from_image": predict_from_image,
-    })
+    Fire(
+        {
+            "train": train,
+            "create_test_image": create_test_image,
+            "predict_from_image": predict_from_image,
+        }
+    )
