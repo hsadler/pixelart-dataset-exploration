@@ -2,13 +2,14 @@ from fire import Fire
 from datasets import load_dataset
 import torch
 from torch.utils.data import DataLoader
-from torchvision.transforms import v2, ToPILImage
+from torchvision.transforms import v2
 from PIL import Image
 from tqdm import tqdm
 import wandb
 from wandb.sdk.wandb_run import Run
 
-from vae import ModelType, new_model, predict
+from vae import ModelType, new_model, predict, train_predict
+from utils import pil_image_concat, tensor_to_pil_image
 
 
 # HELPER FUNCTIONS
@@ -40,7 +41,7 @@ def _load_and_preprocess_dataset(
     return ds
 
 
-def _scale_image_by_pixel_size(image: Image.Image, pixel_size: int) -> Image.Image | None:
+def _scale_image_by_pixel_size(image: Image.Image, pixel_size: int) -> Image.Image:
     original_width, original_height = image.size
     if original_width <= original_height:
         # scale by width
@@ -67,7 +68,7 @@ def create_test_image(image_pixel_size: int):
     )
     # get first image and save it
     t: torch.Tensor = ds[0]["tensor"]
-    pil_image: Image.Image = ToPILImage()(t)
+    pil_image: Image.Image = tensor_to_pil_image(t)
     pil_image.save("test_image.png")
 
 
@@ -111,12 +112,11 @@ def train(
 
     # Select 10 fixed images for visualization
     viz_batch = next(iter(val_loader))
-    viz_inputs = viz_batch["tensor"][:10].to(device)
-    viz_inputs_flat = viz_inputs.view(viz_inputs.size(0), -1)
+    viz_inputs: torch.Tensor = viz_batch["tensor"][:10].to(device)
 
     print("Instantiating model...")
     model = new_model(model_type=ModelType(model_type), image_pixel_size=image_pixel_size)
-    model = model.to(device)  # Move model to device
+    model = model.to(device)
 
     print("Defining loss function and optimizer...")
     criterion = torch.nn.MSELoss()
@@ -131,10 +131,9 @@ def train(
 
         for batch in tqdm(train_loader, desc=f"Training epoch {epoch+1}"):
             optimizer.zero_grad()
-            inputs = batch["tensor"].to(device)  # Move inputs to device
-            inputs_flat = inputs.view(inputs.size(0), -1)
-            outputs = model(inputs_flat)
-            loss = criterion(outputs, inputs_flat)
+            inputs = batch["tensor"].to(device)
+            outputs: torch.Tensor = train_predict(model, inputs, no_grad=False)
+            loss: torch.Tensor = criterion(outputs, inputs)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * inputs.size(0)
@@ -145,35 +144,31 @@ def train(
         val_loss = 0.0
         with torch.no_grad():
             for batch in val_loader:
-                inputs = batch["tensor"].to(device)  # Move inputs to device
-                inputs_flat = inputs.view(inputs.size(0), -1)
-                outputs = model(inputs_flat)
-                loss = criterion(outputs, inputs_flat)
+                inputs = batch["tensor"].to(device)
+                outputs: torch.Tensor = train_predict(model, inputs, no_grad=True)
+                loss: torch.Tensor = criterion(outputs, inputs)
                 val_loss += loss.item() * inputs.size(0)
 
         val_loss /= len(val_loader)
 
         # Log sample input and reconstruction images side by side in a single grid
-        if epoch % 10 == 0:
-            with torch.no_grad():
-                viz_outputs = model(viz_inputs_flat)
-                viz_outputs = viz_outputs.view(-1, 3, image_pixel_size, image_pixel_size)
-                # Create pairs of original and reconstructed images
-                paired_images = []
-                for idx in range(viz_inputs.size(0)):
-                    # Concatenate along width (original and reconstruction side by side)
-                    pair = torch.cat([viz_inputs[idx], viz_outputs[idx]], dim=2)
-                    paired_images.append(pair)
-                # Stack all pairs horizontally into a single image
-                # Take only the first 5 pairs
-                grid_image = torch.cat(paired_images[:5], dim=2)
-                # Create a single wandb image with all pairs
-                viz_images = [
-                    wandb.Image(
-                        grid_image,
-                        caption="Left: Original, Right: Reconstruction (5 samples)",
+        imgs: list[Image.Image] = []
+        if epoch % 10 == 0 or True:
+            viz_outputs: torch.Tensor = train_predict(model, viz_inputs, no_grad=True)
+            # Create pairs of original and reconstructed images
+            for idx in range(5):
+                # Convert tensors to PIL images and append
+                imgs.append(tensor_to_pil_image(viz_inputs[idx]))
+                imgs.append(tensor_to_pil_image(viz_outputs[idx]))
+            run.log(
+                {
+                    "comparisons": wandb.Image(
+                        pil_image_concat(imgs),
+                        mode="RGB",
+                        caption="Left: Original, Right: Reconstruction",
                     )
-                ]
+                }
+            )
 
         # Log metrics and images to wandb
         run.log(
@@ -181,7 +176,6 @@ def train(
                 "epoch": epoch + 1,
                 "train_loss": train_loss,
                 "val_loss": val_loss,
-                "comparisons": viz_images,
             }
         )
 
@@ -226,7 +220,7 @@ def predict_from_image(
         image_pixel_size=image_pixel_size,
         device=device,
     )
-    output_image: Image.Image = ToPILImage()(output_tensor)
+    output_image: Image.Image = tensor_to_pil_image(output_tensor)
     output_image.save(output_path)
 
 

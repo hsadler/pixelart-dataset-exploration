@@ -173,6 +173,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Mac
+.DS_Store
+
 # Models
 best_model.pth
 

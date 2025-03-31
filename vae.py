@@ -10,7 +10,7 @@ class ModelType(Enum):
     BATCH_NORM = "batch_norm"
     LEAKY_RELU = "leaky_relu"
     BATCH_NORM_LEAKY = "batch_norm_leaky"
-    CONV = "conv"  # New model type
+    CONV = "conv"
 
 
 def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequential:
@@ -162,8 +162,6 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
         torch.nn.Linear(1024, 3 * image_pixel_size * image_pixel_size),
     )
     conv_model: torch.nn.Sequential = torch.nn.Sequential(
-        # Reshape flattened input back to image dimensions
-        torch.nn.Unflatten(1, (3, image_pixel_size, image_pixel_size)),
         # Encoder
         torch.nn.Conv2d(3, 32, kernel_size=3, padding=1),
         torch.nn.ReLU(),
@@ -188,8 +186,6 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
         torch.nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),  # Precise upsampling
         torch.nn.ReLU(),
         torch.nn.Conv2d(32, 3, kernel_size=3, padding=1),  # Final convolution to get right channels
-        # Flatten output to match other models
-        torch.nn.Flatten(),
     )
     return {
         ModelType.SIMPLE: simple_model,
@@ -203,6 +199,83 @@ def new_model(model_type: ModelType, image_pixel_size: int) -> torch.nn.Sequenti
     }[model_type]
 
 
+def prepare_input(input_tensor: torch.Tensor, model_type: ModelType, device: str) -> torch.Tensor:
+    """Format input tensor based on model type.
+
+    Args:
+        input_tensor: Input tensor of shape (batch_size, channels, height, width)
+        model_type: Type of model being used
+
+    Returns:
+        Formatted input tensor ready for model
+    """
+    input_tensor: torch.Tensor = input_tensor.unsqueeze(0).to(device)
+    if model_type == ModelType.CONV:
+        # Conv model expects 4D tensor (batch_size, channels, height, width)
+        return input_tensor
+    else:
+        # Other models expect flattened input
+        return input_tensor.view(input_tensor.size(0), -1)
+
+
+def prepare_output(
+    output_tensor: torch.Tensor,
+    model_type: ModelType,
+    image_pixel_size: int,
+    remove_batch: bool = False,
+) -> torch.Tensor:
+    """Format output tensor based on model type.
+
+    Args:
+        output_tensor: Output tensor from model
+        model_type: Type of model being used
+        image_pixel_size: Size of the image in pixels
+        remove_batch: Whether to remove the batch dimension
+
+    Returns:
+        Formatted output tensor in shape (batch_size, channels, height, width) or (channels, height, width) if remove_batch=True
+    """
+    # Reshape based on model type
+    if model_type == ModelType.CONV:
+        # Conv model output needs to be reshaped from flattened to image dimensions
+        outputs = output_tensor.view(output_tensor.size(0), 3, image_pixel_size, image_pixel_size)
+    else:
+        # Other models output is already in correct shape
+        outputs = output_tensor
+
+    # Common output formatting
+    outputs = outputs.clamp(0, 1)  # Ensure values are between 0 and 1
+    outputs = outputs.cpu()
+    if remove_batch:
+        outputs = outputs.squeeze(0)  # Remove batch dimension
+
+    return outputs
+
+
+def train_predict(
+    model: torch.nn.Sequential,
+    input_tensor_batch: torch.Tensor,
+    no_grad: bool = False,
+) -> torch.Tensor:
+    """
+    Predict output of model from input tensor batch.
+
+    Args:
+        model: Model to predict from
+        input_tensor_batch: Input tensor batch
+        no_grad: Whether to run in no_grad mode
+
+    Returns:
+        Predicted output tensor batch
+    """
+    if no_grad:
+        with torch.no_grad():
+            outputs: torch.Tensor = model(input_tensor_batch)
+    else:
+        outputs: torch.Tensor = model(input_tensor_batch)
+    return outputs
+
+
 def predict(
     model_type: ModelType,
     model_path: str,
@@ -212,19 +285,14 @@ def predict(
 ) -> torch.Tensor:
     # Load model
     model: torch.nn.Sequential = new_model(model_type=model_type, image_pixel_size=image_pixel_size)
-    model = model.to(device)  # Move model to device
-    model.load_state_dict(
-        torch.load(model_path, map_location=device)
-    )  # Load state dict with correct device mapping
+    model = model.to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     # Predict
-    input_tensor: torch.Tensor = input_tensor.unsqueeze(0).to(device)
+    input_tensor = prepare_input(input_tensor, model_type, device)
     with torch.no_grad():
         outputs: torch.Tensor = model(input_tensor)
-        outputs: torch.Tensor = outputs.view(outputs.size(0), 3, image_pixel_size, image_pixel_size)
-        outputs: torch.Tensor = outputs.clamp(0, 1)  # Ensure values are between 0 and 1
-        outputs: torch.Tensor = outputs.cpu()
-        outputs: torch.Tensor = outputs.squeeze(0)  # Remove batch dimension
+        outputs = prepare_output(outputs, model_type, image_pixel_size, remove_batch=True)
     return outputs
 
 
