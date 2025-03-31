@@ -10,6 +10,8 @@ from wandb.sdk.wandb_run import Run
 
 from vae import ModelType, new_model, predict, train_predict
 from utils import pil_image_concat, tensor_to_pil_image
+from loss_fn import LossType, get_loss_function
+from optimizer import OptimizerType, get_optimizer
 
 
 # HELPER FUNCTIONS
@@ -60,26 +62,18 @@ def _scale_image_by_pixel_size(image: Image.Image, pixel_size: int) -> Image.Ima
 # CLI COMMANDS
 
 
-def create_test_image(image_pixel_size: int):
-    ds = _load_and_preprocess_dataset(
-        path="tkarr/sprite_caption_dataset",
-        split="train",
-        image_pixel_size=image_pixel_size,
-    )
-    # get first image and save it
-    t: torch.Tensor = ds[0]["tensor"]
-    pil_image: Image.Image = tensor_to_pil_image(t)
-    pil_image.save("test_image.png")
-
-
 def train(
     model_type: str,
+    loss_type: str,
+    optimizer_type: str,
+    learning_rate: float,
     image_pixel_size: int,
     batch_size: int,
     num_epochs: int,
     device: str,
     overfit: bool = False,
     wandb_project: str = "pixelart-autoencoder",
+    num_viz_images: int = 5,
 ):
     config_dict = {k: v for k, v in locals().items()}
 
@@ -110,25 +104,22 @@ def train(
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    # Select 10 fixed images for visualization
-    viz_batch = next(iter(val_loader))
-    viz_inputs: torch.Tensor = viz_batch["tensor"][:10].to(device)
-
     print("Instantiating model...")
     model = new_model(model_type=ModelType(model_type), image_pixel_size=image_pixel_size)
     model = model.to(device)
 
     print("Defining loss function and optimizer...")
-    criterion = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    criterion = get_loss_function(LossType(loss_type))
+    optimizer = get_optimizer(OptimizerType(optimizer_type), model, learning_rate)
 
     print("Training the model...")
     best_val_loss = float("inf")
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs}")
+
+        # Training
         model.train()
         train_loss = 0.0
-
         for batch in tqdm(train_loader, desc=f"Training epoch {epoch+1}"):
             optimizer.zero_grad()
             inputs = batch["tensor"].to(device)
@@ -153,10 +144,12 @@ def train(
 
         # Log sample input and reconstruction images side by side in a single grid
         imgs: list[Image.Image] = []
-        if epoch % 10 == 0 or True:
+        if epoch % 10 == 0 or epoch == num_epochs - 1:
+            viz_batch = next(iter(val_loader))
+            viz_inputs: torch.Tensor = viz_batch["tensor"][:num_viz_images].to(device)
             viz_outputs: torch.Tensor = train_predict(model, viz_inputs, no_grad=True)
             # Create pairs of original and reconstructed images
-            for idx in range(5):
+            for idx in range(num_viz_images):
                 # Convert tensors to PIL images and append
                 imgs.append(tensor_to_pil_image(viz_inputs[idx]))
                 imgs.append(tensor_to_pil_image(viz_outputs[idx]))
@@ -205,12 +198,12 @@ def train(
 def predict_from_image(
     model_type: str,
     model_path: str = "best_model.pth",
-    image_path: str = "test_image.png",
-    output_path: str = "output_image.png",
+    input_image_path: str = "test_image.png",
+    output_image_path: str = "output_image.png",
     image_pixel_size: int = 64,
     device: str = "cpu",
 ) -> None:
-    image: Image.Image = Image.open(image_path)
+    image: Image.Image = Image.open(input_image_path)
     image: Image.Image = _scale_image_by_pixel_size(image, image_pixel_size)
     input_tensor: torch.Tensor = v2.ToTensor()(image)
     output_tensor: torch.Tensor = predict(
@@ -221,14 +214,13 @@ def predict_from_image(
         device=device,
     )
     output_image: Image.Image = tensor_to_pil_image(output_tensor)
-    output_image.save(output_path)
+    output_image.save(output_image_path)
 
 
 if __name__ == "__main__":
     Fire(
         {
             "train": train,
-            "create_test_image": create_test_image,
             "predict_from_image": predict_from_image,
         }
     )
