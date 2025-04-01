@@ -1,13 +1,14 @@
 # pixelart-dataset-exploration
 Exploration of pixelart datasets
 
-TODO:
-- [ ] Models wrapped in classes (lighning modules, take pytorch-lightning tutorial)
-- [ ] Make variational by outputting a mean and a standard deviation
-- [ ] Measure KL loss
+## Requirements
+- Python >=3.12
+- Poetry >=2.1.1
 
+## Installation
+```bash
+poetry install
+```
 
-"Variational" Autoencoder
-VAE predict a mean and a standard deviation (sample from normal distribution)
-
-Variational means sampling from a distribution.
+## Usage
+See the "explore" Jupyter Notebooks for data explorations and takeaways.
